@@ -16,6 +16,3 @@ function main()
 	end
   end
 end
-
--- Darova, Fedya
--- вновь седая ночь
