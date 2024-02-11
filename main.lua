@@ -3,24 +3,29 @@ script_author("SY:NC Develope.")
 script_version('0.1 Reborn')
 
 require 'lib.moonloader'
-local sampev							= require "lib.samp.events"
-local font_admin_chat					= require ("moonloader").font_flag
-local ev								= require ("moonloader").audiostream_state
-local dlstat							= require ("moonloader").download_status
+local sampev							= require "lib.samp.events" -- интеграция пакетов SA:MP
+local font_admin_chat					= require ("moonloader").font_flag -- внедрение флагов для рендера
+local ev								= require ("moonloader").audiostream_state -- внедрение аудио-оповещений
+local dlstat							= require ("moonloader").download_status -- добавление средств для скачивания файлов по URL
 --local as_action                         = require('moonloader').audiostream_state
-local ffi 								= require "ffi"
-local getBonePosition 					= ffi.cast("int (__thiscall*)(void*, float*, int, bool)", 0x5E4280)
-local mem 								= require "memory"
-local imgui 							= require "imgui"
-local encoding							= require "encoding"
-local vkeys								= require "vkeys"
-local inicfg							= require "inicfg"
-local notfy								= import 'lib/imgui_notf.lua'
-local res, sc_board						= pcall(import, 'lib/scoreboard.lua')
-local fai                               = require 'fAwesome5'
+local ffi 								= require "ffi" -- работа с C++-подобными переменнами и памятью GTA
+local mem 								= require "memory" -- прямая работа с памятью GTA SA
+local imgui 							= require "imgui" -- внедрение многофункционального графического интерфейса ImGUI C++
+local encoding							= require "encoding" -- работа с кодировками 
+local vkeys								= require "vkeys" -- работа с клавишам
+local inicfg							= require "inicfg" -- внедрение конфигурационных файлов
+local notfy								= import 'lib/imgui_notf.lua' -- импорт оповещений
+local res, sc_board						= pcall(import, 'lib/scoreboard.lua') -- интеграция CustomScoreBoard
+local fai                               = require 'fAwesome5' -- внедрение шрифтов вида FontAwesome v5
+local ease                              = require 'ease' -- интеграция анимаций
 
+-- ## Работа с кодировкой ## --
 encoding.default = 'CP1251' 
 u8 = encoding.UTF8 
+-- ## Работа с кодировкой ## --
+
+local getBonePosition = ffi.cast("int (__thiscall*)(void*, float*, int, bool)", 0x5E4280)
+
 
 -- ## For ImGUI ## --
 local fai_font = nil
@@ -38,6 +43,9 @@ imgui.ToggleButton = require('imgui_addons').ToggleButton
 imgui.Spinner = require('imgui_addons').Spinner
 imgui.BufferingBar = require('imgui_addons').BufferingBar
 imgui.Tooltip = require('imgui_addons').Tooltip
+imgui.CenterText = require('imgui_addons').CenterText
+
+local sw, sh = getScreenResolution()
 
 local i_elements = {
     windows = {
@@ -50,9 +58,12 @@ local i_elements = {
         floods = false,
         developer = false
     },
+    animation = {
+        main = nil,
+        main_v = 0
+    }
 }
 -- ## For ImGUI ## -- 
-local sw, sh = getScreenResolution()
 
 function apply_custom_style()
     imgui.SwitchContext()
@@ -127,6 +138,11 @@ function main()
     sampRegisterChatCommand('tool', function()
         i_elements.windows.main.v = not i_elements.windows.main.v
         imgui.Process = i_elements.windows.main.v
+        local temp_thread = i_elements.animation.main
+        if temp_thread ~= nil and temp_thread.dead then temp_thread:terminate() end
+        i_elements.animation.main = ease(200, 0, nil, 1.0, 'InOutCubic', function(v)
+            i_elements.animation.main_v = v
+        end)
     end)
     
     while true do
@@ -134,6 +150,10 @@ function main()
 
         imgui.Process = true
         
+        if not i_elements.windows.main.v then  
+            imgui.Process = false 
+            imgui.ShowCursor = false  
+        end
     end
 end
 
@@ -162,47 +182,57 @@ function imgui.SelectableButton(text, check_press, question, size)
 	return button_check
 end
 
+-- ## Текстовые блоки "Description" ## --
+local gset_desc = u8[[
+Здесь представлены все основные настройки скрипта AH. 
+Для управления элементами, нажимайте на переключатели.
+]]
+
+-- ## Текстовые блоки "Description" ## --
+
 function imgui.OnDrawFrame()
     if i_elements.windows.main.v then
         imgui.SetNextWindowPos(imgui.ImVec2(sw / 2, sh / 2), imgui.Cond.FirstUseEver, imgui.ImVec2(0.5, 0.5))
         imgui.SetNextWindowSize(imgui.ImVec2(500, 500), imgui.Cond.FirstUseEver)
 
         imgui.Begin("##Main", i_elements.windows.main, imgui.WindowFlags.NoResize + imgui.WindowFlags.NoTitleBar)
+            local temp_pos = imgui.GetCursorPosY()
+            imgui.SetCursorPosY(temp_pos - i_elements.animation.main_v)
             imgui.BeginChild('##Settings', imgui.ImVec2(-1,25), true)
-                imgui.SetCursorPosX((imgui.GetWindowWidth()/2) - (imgui.CalcTextSize(u8"РќР°СЃС‚СЂРѕР№РєРё").x/2))
-                imgui.Text(fai.ICON_FA_WRENCH .. u8" РќР°СЃС‚СЂРѕР№РєРё")
+                imgui.CenterText(fai.ICON_FA_WRENCH .. u8" Настройки")
             imgui.EndChild()
-
+            imgui.SetCursorPosY(temp_pos + 28)
+            imgui.SetCursorPosX(imgui.GetCursorPosX() - i_elements.animation.main_v)
             imgui.BeginChild('##FrameMenu', imgui.ImVec2(40,imgui.GetWindowHeight()-87), true)
-                if imgui.SelectableButton(fai.ICON_FA_GLOBE, i_elements.boolean.gset, u8"РћСЃРЅРѕРІРЅС‹Рµ РЅР°СЃС‚СЂРѕР№РєРё", imgui.ImVec2(30, 30)) then
+                if imgui.SelectableButton(fai.ICON_FA_GLOBE, i_elements.boolean.gset, u8"Основные настройки", imgui.ImVec2(30, 30)) then
                     i_elements.boolean.gset = not i_elements.boolean.gset
                     i_elements.boolean.keyset = false
                     i_elements.boolean.achatset = false
                     i_elements.boolean.floods = false
                     i_elements.boolean.developer = false
                 end
-                if imgui.SelectableButton(fai.ICON_FA_KEYBOARD, i_elements.boolean.keyset, u8"РќР°СЃС‚СЂРѕР№РєР° РєР»Р°РІРёС€СЊ СЃРєСЂРёРїС‚Р°", imgui.ImVec2(30, 30)) then
+                if imgui.SelectableButton(fai.ICON_FA_KEYBOARD, i_elements.boolean.keyset, u8"Настройка клавиш скрипта", imgui.ImVec2(30, 30)) then
                     i_elements.boolean.gset = false
                     i_elements.boolean.keyset = not i_elements.boolean.keyset
                     i_elements.boolean.achatset = false
                     i_elements.boolean.floods = false
                     i_elements.boolean.developer = false
                 end
-                if imgui.SelectableButton(fai.ICON_FA_TH_LIST, i_elements.boolean.achatset, u8"РќР°СЃС‚СЂРѕР№РєРё Р°РґРјРёРЅ С‡Р°С‚Р°", imgui.ImVec2(30, 30)) then
+                if imgui.SelectableButton(fai.ICON_FA_TH_LIST, i_elements.boolean.achatset, u8"Настройки админ-чата", imgui.ImVec2(30, 30)) then
                     i_elements.boolean.gset = false
                     i_elements.boolean.keyset = false
                     i_elements.boolean.floods = false
                     i_elements.boolean.achatset = not i_elements.boolean.achatset
                     i_elements.boolean.developer = false
                 end
-                if imgui.SelectableButton(fai.ICON_FA_CODE_BRANCH, i_elements.boolean.floods, u8"РќР°СЃС‚СЂРѕР№РєР° С„Р»СѓРґРѕРІ", imgui.ImVec2(30, 30)) then
+                if imgui.SelectableButton(fai.ICON_FA_CODE_BRANCH, i_elements.boolean.floods, u8"Настройка флудов", imgui.ImVec2(30, 30)) then
                     i_elements.boolean.gset = false
                     i_elements.boolean.keyset = false
                     i_elements.boolean.achatset = false
                     i_elements.boolean.developer = false
                     i_elements.boolean.floods = not i_elements.boolean.floods
                 end
-                if imgui.SelectableButton(fai.ICON_FA_COGS, i_elements.boolean.developer, u8"Р РµР¶РёРј СЂР°Р·СЂР°Р±РѕС‚С‡РёРєР°", imgui.ImVec2(30, 30)) then
+                if imgui.SelectableButton(fai.ICON_FA_COGS, i_elements.boolean.developer, u8"Режим разработчика", imgui.ImVec2(30, 30)) then
                     i_elements.boolean.gset = false
                     i_elements.boolean.keyset = false
                     i_elements.boolean.achatset = false
@@ -212,6 +242,10 @@ function imgui.OnDrawFrame()
             imgui.EndChild()
 
             imgui.SameLine()
+
+            imgui.SetCursorPosX(imgui.GetCursorPosX() + 40)
+
+            imgui.PushStyleColor(imgui.Col.ChildWindowBg, imgui.ImVec4(0.13, 0.13, 0.13, (i_elements.animation.main_v + 200) / 200))
 
             imgui.BeginChild('##FrameMain', imgui.ImVec2(-1,imgui.GetWindowHeight()-87), true)
                 if i_elements.boolean.gset then  
@@ -231,10 +265,12 @@ function imgui.OnDrawFrame()
                 end
             imgui.EndChild()
 
-            imgui.SetCursorPosY(imgui.GetWindowHeight() - 50)
+            imgui.PopStyleColor(1)
+
+            imgui.SetCursorPosY(imgui.GetWindowHeight() - 50 + i_elements.animation.main_v / 2)
             imgui.BeginChild('##Description', imgui.ImVec2(-1, -1), true)
                 if i_elements.boolean.gset then  
-                    imgui.Text("Test 1")
+                    imgui.Text(gset_desc)
                 end  
                 if i_elements.boolean.keyset then  
                     imgui.Text("Test 2")
